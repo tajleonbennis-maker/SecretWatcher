@@ -99,4 +99,13 @@ SecretWatcher is a public-interest security project dedicated to finding AI API 
 
 ## 当前状态
 
-项目正在建立公开规范与 MVP 方案，暂未发布扫描代码或敏感数据。
+MVP 已部署运行，包含 FOFA 资产导入、AI 应用指纹、同源 HTML/JavaScript
+资源图遍历、国产模型凭据上下文识别、脱敏指纹落库和末四位查询接口。
+
+当前真实数据为 120 个已观察资产、120 条应用指纹命中；第一批主动复核已调度
+30 个资产，但尚未成功获取有效 JavaScript 内容，因此真实凭据发现数仍为 0。
+项目不会把“任务执行成功”包装成“已经发现泄露”。访问层、构建产物解析和三节点
+任务协作仍是接下来的主要工作。
+
+完整的实现范围、部署结构、已知问题和接手路线请阅读
+[PROJECT_STATUS.md](PROJECT_STATUS.md)。

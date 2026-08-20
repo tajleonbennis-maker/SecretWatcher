@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="秘钥守望者是一个公益 AI API 密钥泄露守望与负责任披露项目。">
+  <title>秘钥守望者 · SecretWatcher</title>
+  <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+  <div class="ambient ambient-one"></div>
+  <div class="ambient ambient-two"></div>
+  <header class="nav shell">
+    <a class="brand" href="#top" aria-label="秘钥守望者首页">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span><strong>秘钥守望者</strong><small>SECRETWATCHER</small></span>
+    </a>
+    <nav aria-label="主导航">
+      <a href="#mission">使命</a>
+      <a href="#method">方法</a>
+      <a href="#coverage">覆盖</a>
+      <a href="#principles">原则</a>
+    </nav>
+    <a class="nav-action" href="https://github.com/tajleonbennis-maker/SecretWatcher" target="_blank" rel="noreferrer">GitHub ↗</a>
+  </header>
+
+  <main id="top">
+    <section class="hero shell">
+      <div class="hero-copy">
+        <p class="eyebrow"><span></span> 公益数字资产安全计划</p>
+        <h1>让泄露的密钥，<br><em>更早被它的主人发现。</em></h1>
+        <p class="lead">我们持续观察公开互联网中的 AI 应用与配置暴露，在不使用、不验证泄露凭据的前提下，帮助资产所有者发现风险、完成轮换，并推动平台建立更好的保护机制。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#mission">了解项目 <b>↓</b></a>
+          <a class="button ghost" href="https://github.com/tajleonbennis-maker/SecretWatcher/blob/main/SECURITY.md" target="_blank" rel="noreferrer">负责任披露</a>
+        </div>
+        <div class="trust-row">
+          <span><i class="dot green"></i> 不调用泄露 Key</span>
+          <span><i class="dot blue"></i> 不公开目标清单</span>
+          <span><i class="dot amber"></i> 人工复核后通知</span>
+        </div>
+      </div>
+
+      <div class="watch-panel" aria-label="守望流程示意">
+        <div class="panel-head"><span>WATCH / 公开互联网</span><span class="live"><i></i> PASSIVE</span></div>
+        <div class="radar">
+          <div class="rings"><i></i><i></i><i></i><i></i></div>
+          <div class="sweep"></div>
+          <span class="signal s1"></span><span class="signal s2"></span><span class="signal s3"></span>
+          <div class="radar-label"><small>OBSERVE</small><strong>守望中</strong><span>只读 · 被动识别</span></div>
+        </div>
+        <div class="event-list">
+          <div><span class="event-icon">01</span><p><b>资产发现</b><small>合规测绘数据</small></p><em>观察</em></div>
+          <div><span class="event-icon">02</span><p><b>风险识别</b><small>应用与配置指纹</small></p><em>脱敏</em></div>
+          <div><span class="event-icon">03</span><p><b>负责通知</b><small>所有者与服务平台</small></p><em>处置</em></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics shell" aria-label="公开统计">
+      <article><span id="assetsStat">—</span><p>已观察公开资产<small>不展示目标地址</small></p></article>
+      <article><span id="detectionsStat">—</span><p>应用指纹命中<small>等待人工复核</small></p></article>
+      <article><span id="productsStat">—</span><p>已识别产品<small>持续扩展规则</small></p></article>
+      <article><span>0</span><p>已公开完整密钥<small>永远保持为零</small></p></article>
+    </section>
+
+    <section id="mission" class="section shell split">
+      <div>
+        <p class="section-index">01 / WHY</p>
+        <h2>账单异常，<br>不该是第一声警报。</h2>
+      </div>
+      <div class="prose">
+        <p>API Key 已经是开发者与企业的重要数字资产。一旦它出现在公开网页、错误日志、配置接口或错误部署的 AI 应用中，风险可能在几分钟内发生，而资产所有者往往直到费用上涨才知道。</p>
+        <p>秘钥守望者因此而生：不是为了收集秘密，而是为了缩短从“公开暴露”到“所有者知情并完成处置”的时间。</p>
+        <blockquote>发现不是终点。让风险被正确的人看见，并推动它被安全地关闭，才是。</blockquote>
+      </div>
+    </section>
+
+    <section id="method" class="section shell">
+      <div class="section-heading"><p class="section-index">02 / HOW</p><h2>一条克制、可审计的安全闭环</h2></div>
+      <div class="steps">
+        <article><span>01</span><div class="step-line"></div><h3>发现</h3><p>从获得授权的测绘数据和公开页面中发现 AI 应用，不绕过认证与访问控制。</p></article>
+        <article><span>02</span><div class="step-line"></div><h3>识别</h3><p>通过产品、接口和配置特征判断风险；完整凭据不进入普通数据库或报告。</p></article>
+        <article><span>03</span><div class="step-line"></div><h3>复核</h3><p>去重、排除示例值与误报，不通过调用模型、查询余额等方式验证密钥。</p></article>
+        <article><span>04</span><div class="step-line"></div><h3>通知</h3><p>寻找公开安全渠道，通知资产方与服务提供方，并跟踪轮换、失效和申诉。</p></article>
+      </div>
+    </section>
+
+    <section id="coverage" class="section shell coverage">
+      <div class="coverage-copy">
+        <p class="section-index">03 / COVERAGE</p>
+        <h2>从 DeepTutor 出发，<br>但不止于一个项目。</h2>
+        <p>第一阶段聚焦公开部署的 AI 应用、模型网关与常见配置暴露。检测规则以被动证据为基础，每一条规则都需要明确误报边界。</p>
+        <p class="coverage-note"><span id="coverageCount">—</span> 个产品指纹已进入 MVP</p>
+      </div>
+      <div id="productGrid" class="product-grid" aria-live="polite">
+        <span>DeepTutor</span><span>Dify</span><span>Open WebUI</span><span>AnythingLLM</span>
+        <span>LobeChat</span><span>LibreChat</span><span>FastGPT</span><span>RAGFlow</span>
+        <span>LiteLLM</span><span>New API</span><span>One API</span><span>更多规则持续加入</span>
+      </div>
+    </section>
+
+    <section id="principles" class="section shell principles">
+      <div class="section-heading"><p class="section-index">04 / BOUNDARIES</p><h2>能力必须生长在边界之内</h2></div>
+      <div class="principle-grid">
+        <article><b>不使用</b><p>不会使用发现的 Key 请求任何第三方 API。</p></article>
+        <article><b>不交易</b><p>不会出售密钥、目标清单或泄露数据。</p></article>
+        <article><b>不越权</b><p>不会绕过登录、权限控制或扩大访问范围。</p></article>
+        <article><b>不围观</b><p>不会为展示效果公开仍可利用的风险细节。</p></article>
+        <article><b>默认脱敏</b><p>只保留处置所需的最小证据和不可逆指纹。</p></article>
+        <article><b>接受申诉</b><p>支持误报复核、错误归属纠正和数据删除。</p></article>
+      </div>
+    </section>
+
+    <section class="closing shell">
+      <p class="eyebrow"><span></span> LONG-TERM WATCH</p>
+      <h2>安全不是一次扫描，<br>而是一场长期守望。</h2>
+      <p>我们会持续投入服务器资源、完善规则与通知流程，也欢迎研究者、开发者和平台方共同参与。</p>
+      <a class="button primary" href="https://github.com/tajleonbennis-maker/SecretWatcher" target="_blank" rel="noreferrer">参与公益项目 <b>↗</b></a>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <div class="brand compact"><span class="brand-mark"><i></i><i></i><i></i></span><span><strong>秘钥守望者</strong><small>SECRETWATCHER</small></span></div>
+    <p>Public-interest AI credential exposure watch & responsible disclosure.</p>
+    <p>© 2026 SecretWatcher · cyberstroll.top</p>
+  </footer>
+  <script src="/static/site.js" defer></script>
+</body>
+</html>
+

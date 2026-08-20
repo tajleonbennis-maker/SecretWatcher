@@ -1,0 +1,2 @@
+"""SecretWatcher MVP package."""
+
