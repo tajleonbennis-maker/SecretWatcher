@@ -402,9 +402,9 @@ _NON_CHAT_MODEL = re.compile(
 
 
 def _models_near(text: str, start: int, end: int) -> str:
-    # 只在 key 附近较小窗口内提取，避免抓到整段配置里的无关模型。
-    window = 500
-    local = text[max(0, start - window): min(len(text), end + window)]
+    # 紧邻窗口：直接 model="xxx" 赋值。远窗口：兜底。
+    near = text[max(0, start - 200): min(len(text), end + 200)]
+    far = text[max(0, start - 500): min(len(text), end + 500)]
     found: list[str] = []
     seen: set[str] = set()
 
@@ -417,20 +417,33 @@ def _models_near(text: str, start: int, end: int) -> str:
             return False
         return True
 
-    for match in _MODEL_ASSIGN.finditer(local):
-        name = match.group(1).strip()
+    def add(name: str) -> bool:
         key = name.lower()
         if key in seen or not keep(name):
-            continue
+            return False
         seen.add(key)
         found.append(name)
-    for match in _KNOWN_MODELS.finditer(local):
-        name = match.group(1).strip()
-        key = name.lower()
-        if key in seen or not keep(name):
-            continue
-        seen.add(key)
-        found.append(name)
+        return True
+
+    # 1) 紧邻 model="..." 赋值（最相关）
+    for match in _MODEL_ASSIGN.finditer(near):
+        if add(match.group(1).strip()) and len(found) >= 2:
+            break
+    # 2) 远 _MODEL_ASSIGN（数组/多配置场景）
+    if len(found) < 2:
+        for match in _MODEL_ASSIGN.finditer(far):
+            if add(match.group(1).strip()) and len(found) >= 2:
+                break
+    # 3) 紧邻裸词（_KNOWN_MODELS）兜底，仅前两步都无结果时
+    if not found:
+        for match in _KNOWN_MODELS.finditer(near):
+            if add(match.group(1).strip()) and len(found) >= 2:
+                break
+    # 4) 远裸词兜底
+    if not found:
+        for match in _KNOWN_MODELS.finditer(far):
+            if add(match.group(1).strip()) and len(found) >= 2:
+                break
     return ",".join(found[:2])[:120]
 
 
