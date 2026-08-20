@@ -130,6 +130,7 @@ def _public_finding(item: dict[str, object], *, key_visible_chars: int = 4) -> d
         "first_seen": item["first_seen"],
         "last_seen": item["last_seen"],
         "status": item["status"],
+        "evidence": item.get("evidence_path") or None,
     }
 
 
@@ -141,6 +142,14 @@ def public_findings(db: Database = Depends(database)) -> dict[str, object]:
         "count": len(findings),
         "privacy_note": "仅展示脱敏资产、模型信息与 Key 后缀；不公开完整密钥或源码路径。",
     }
+
+
+@app.get("/evidence/{filename}")
+def evidence_image(filename: str) -> FileResponse:
+    path = Path("/var/lib/secretwatcher/evidence") / Path(filename).name
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="证据尚未生成")
+    return FileResponse(path, media_type="image/png")
 
 
 @app.post("/api/public/key-lookup")

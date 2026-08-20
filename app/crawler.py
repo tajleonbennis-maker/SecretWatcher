@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
 import json
+import os
 import re
 import socket
 from collections import deque
 from dataclasses import dataclass
 from collections.abc import Callable
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
 from .ai_review import DeepSeekReviewer
-from .credentials import extract_credential_findings
+from .credentials import BASE64_CANDIDATE, HEX_CANDIDATE, KEY_FORMATS, extract_credential_findings
 from .product_adapters import public_paths_for
 
 
@@ -179,6 +183,85 @@ def _scan_text_for_credentials(
     )
 
 
+EVIDENCE_DIR = Path(os.environ.get("SECRETWATCHER_EVIDENCE_DIR", "/var/lib/secretwatcher/evidence"))
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "/opt/secretwatcher/ms-playwright")
+
+
+def _raw_key_for(text: str, key_hmac: str, fingerprint_key: str) -> str | None:
+    """在已抓取的文本中，通过 HMAC 指纹反查完整密钥（仅内存，不落盘）。"""
+    for fmt in KEY_FORMATS:
+        for match in fmt.pattern.finditer(text):
+            cand = match.group("key")
+            digest = hmac.new(fingerprint_key.encode(), cand.encode(), hashlib.sha256).hexdigest()
+            if digest == key_hmac:
+                return cand
+    for cand in (BASE64_CANDIDATE, HEX_CANDIDATE):
+        for match in cand.finditer(text):
+            cand_key = match.group("key")
+            digest = hmac.new(fingerprint_key.encode(), cand_key.encode(), hashlib.sha256).hexdigest()
+            if digest == key_hmac:
+                return cand_key
+    return None
+
+
+_SCROLL_TO_KEY = """(k) => {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (w.nextNode()) {
+    if (w.currentNode.nodeValue.includes(k)) {
+      const r = document.createRange();
+      r.selectNodeContents(w.currentNode);
+      const rect = r.getBoundingClientRect();
+      window.scrollTo(0, Math.max(0, rect.top + window.scrollY - 200));
+      break;
+    }
+  }
+}"""
+
+_MASK_KEY = """(k) => {
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (w.nextNode()) nodes.push(w.currentNode);
+  for (const n of nodes) {
+    if (n.nodeValue.includes(k)) n.nodeValue = n.nodeValue.split(k).join('[已脱敏密钥]');
+  }
+}"""
+
+
+async def _capture_evidence(url: str, raw_key: str, filename: str) -> str | None:
+    """同步截图：访问 url，滚动到 key 并打码，落盘打码后的截图，返回相对路径。"""
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        return None
+    out = EVIDENCE_DIR / filename
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch()
+            try:
+                context = await browser.new_context(
+                    viewport={"width": 1280, "height": 900}, ignore_https_errors=True
+                )
+                page = await context.new_page()
+                try:
+                    await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                except Exception:
+                    return None
+                await page.evaluate(_SCROLL_TO_KEY, raw_key)
+                await page.evaluate(_MASK_KEY, raw_key)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                await page.screenshot(path=str(out))
+                return f"/evidence/{filename}"
+            finally:
+                await browser.close()
+    except Exception:
+        return None
+
+
+def _evidence_filename(key_hmac: str, url: str) -> str:
+    digest = hashlib.md5(url.encode()).hexdigest()[:8]
+    return f"{key_hmac[:16]}_{digest}.png"
+
+
 def _texts_from_source_map(payload: str) -> list[str]:
     try:
         data = json.loads(payload)
@@ -267,12 +350,18 @@ async def crawl_javascript_exposure(
             if on_file:
                 on_file(len(content))
             text = content.decode("utf-8", errors="ignore")
-            findings.extend(
-                _scan_text_for_credentials(
-                    text, source_url=url, asset_name=asset_name, product=product,
-                    fingerprint_key=fingerprint_key,
-                )
+            scanned = _scan_text_for_credentials(
+                text, source_url=url, asset_name=asset_name, product=product,
+                fingerprint_key=fingerprint_key,
             )
+            for finding in scanned:
+                raw_key = _raw_key_for(text, str(finding["key_hmac"]), fingerprint_key)
+                if raw_key:
+                    filename = _evidence_filename(str(finding["key_hmac"]), url)
+                    evidence = await _capture_evidence(url, raw_key, filename)
+                    if evidence:
+                        finding["evidence_path"] = evidence
+            findings.extend(scanned)
             path_lower = urlsplit(url).path.lower()
             if path_lower.endswith(".map"):
                 for embedded in _texts_from_source_map(text):

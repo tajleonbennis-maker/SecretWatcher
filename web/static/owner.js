@@ -65,6 +65,7 @@ function findingRow(item) {
     <td>${Number(item.confidence || 0).toFixed(2)}</td>
     <td>${escapeHtml(statusLabel(item.status))}</td>
     <td>${escapeHtml(item.last_seen)}</td>
+    <td>${item.evidence ? `<a href="${escapeHtml(item.evidence)}" target="_blank" rel="noreferrer"><img class="evidence-thumb" src="${escapeHtml(item.evidence)}" alt="证据截图" loading="lazy"></a>` : "—"}</td>
     <td><button class="del" data-id="${Number(item.id)}">删除</button></td>
   </tr>`;
 }
@@ -75,7 +76,7 @@ async function loadFindings() {
   const data = await response.json();
   const list = data.findings || [];
   const body = document.querySelector("#findingsList");
-  if (!list.length) { body.innerHTML = `<tr><td colspan="8" class="muted">暂无发现记录</td></tr>`; return; }
+  if (!list.length) { body.innerHTML = `<tr><td colspan="9" class="muted">暂无发现记录</td></tr>`; return; }
   body.innerHTML = list.map(findingRow).join("");
   body.querySelectorAll("button.del").forEach(btn => {
     btn.addEventListener("click", async () => {

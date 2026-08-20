@@ -41,3 +41,5 @@
 .risk { display: inline-block; padding: 3px 8px; border-radius: 12px; background: #162b24; color: #9db1a7; }
 .risk-critical,
 .risk-high { background: rgba(233, 196, 106, .1); color: var(--amber); }
+.evidence-thumb { width: 110px; height: auto; border-radius: 6px; border: 1px solid var(--line); display: block; }
+.evidence-thumb:hover { outline: 1px solid var(--green); }

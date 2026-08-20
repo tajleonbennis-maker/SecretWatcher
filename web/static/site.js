@@ -27,7 +27,7 @@ async function loadPublicData() {
 function renderFindings(findings, emptyMessage = "尚无可公开的脱敏发现记录") {
   const body = document.querySelector("#publicFindings");
   if (!findings.length) {
-    body.innerHTML = `<tr><td colspan="7" class="findings-empty">${escapeHtml(emptyMessage)}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="findings-empty">${escapeHtml(emptyMessage)}</td></tr>`;
     return;
   }
   body.innerHTML = findings.map(item => `<tr>
@@ -38,6 +38,7 @@ function renderFindings(findings, emptyMessage = "尚无可公开的脱敏发现
     <td><span class="risk risk-${escapeHtml(item.risk_level)}">${escapeHtml(item.risk_level)}</span></td>
     <td>${escapeHtml(formatDate(item.last_seen))}</td>
     <td>${escapeHtml(statusLabel(item.status))}</td>
+    <td>${item.evidence ? `<a href="${escapeHtml(item.evidence)}" target="_blank" rel="noreferrer"><img class="evidence-thumb" src="${escapeHtml(item.evidence)}" alt="证据截图" loading="lazy"></a>` : "—"}</td>
   </tr>`).join("");
 }
 

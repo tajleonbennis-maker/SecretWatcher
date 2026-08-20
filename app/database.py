@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS credential_findings (
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'unverified',
+    evidence_path TEXT NOT NULL DEFAULT '',
     UNIQUE(asset_id, provider, key_hmac),
     FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
@@ -134,6 +135,10 @@ class Database:
         if columns and "model_names" not in columns:
             db.execute(
                 "ALTER TABLE credential_findings ADD COLUMN model_names TEXT NOT NULL DEFAULT ''"
+            )
+        if columns and "evidence_path" not in columns:
+            db.execute(
+                "ALTER TABLE credential_findings ADD COLUMN evidence_path TEXT NOT NULL DEFAULT ''"
             )
 
     @contextmanager
@@ -269,11 +274,14 @@ class Database:
                 db.execute(
                     """UPDATE credential_findings SET product=?, asset_name=?, source_path=?,
                     model_names=CASE WHEN length(?)>length(model_names) THEN ? ELSE model_names END,
-                    key_suffix8=?, confidence=MAX(confidence, ?), risk_level=?, last_seen=? WHERE id=?""",
+                    key_suffix8=?, confidence=MAX(confidence, ?), risk_level=?, last_seen=?,
+                    evidence_path=CASE WHEN ? != '' THEN ? ELSE evidence_path END
+                    WHERE id=?""",
                     (
                         finding.get("product", ""), finding["asset_name"], finding.get("source_path", ""),
                         finding.get("model_names", ""), finding.get("model_names", ""),
                         finding["key_suffix8"], finding["confidence"], finding["risk_level"], now,
+                        finding.get("evidence_path", ""), finding.get("evidence_path", ""),
                         existing["id"],
                     ),
                 )
@@ -281,13 +289,14 @@ class Database:
             db.execute(
                 """INSERT INTO credential_findings
                 (asset_id, provider, product, asset_name, source_path, model_names, key_suffix8, key_hmac,
-                 confidence, risk_level, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 confidence, risk_level, first_seen, last_seen, evidence_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     asset_id, finding["provider"], finding.get("product", ""), finding["asset_name"],
                     finding.get("source_path", ""), finding.get("model_names", ""),
                     finding["key_suffix8"], finding["key_hmac"],
                     finding["confidence"], finding["risk_level"], now, now,
+                    finding.get("evidence_path", ""),
                 ),
             )
             return True
@@ -319,7 +328,7 @@ class Database:
         with self.connect() as db:
             rows = db.execute(
                 """SELECT id, provider, product, asset_name, model_names, key_suffix8, confidence, risk_level,
-                first_seen, last_seen, status
+                first_seen, last_seen, status, evidence_path
                 FROM credential_findings
                 ORDER BY last_seen DESC, id DESC LIMIT ?""",
                 (limit,),
