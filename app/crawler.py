@@ -14,6 +14,7 @@ import httpx
 
 from .ai_review import DeepSeekReviewer
 from .credentials import extract_credential_findings
+from .product_adapters import public_paths_for
 
 
 HTML_ASSET = re.compile(r"<(?:script|link)\b[^>]+?(?:src|href)=[\"']([^\"']+)[\"']", re.I)
@@ -42,7 +43,6 @@ PRIORITY_PATHS = (
     "/_next/static/chunks/webpack.js",
     "/_next/static/chunks/pages/_app.js",
 )
-
 
 @dataclass(frozen=True)
 class CrawlLimits:
@@ -190,8 +190,14 @@ def _texts_from_source_map(payload: str) -> list[str]:
     return [item for item in contents if isinstance(item, str) and item]
 
 
-def _enqueue_priority_paths(root_url: str, queue: deque[tuple[str, httpx.Response | None]], visited: set[str]) -> None:
-    for path in PRIORITY_PATHS:
+def _enqueue_priority_paths(
+    root_url: str,
+    product: str,
+    queue: deque[tuple[str, httpx.Response | None]],
+    visited: set[str],
+) -> None:
+    product_paths = public_paths_for(product)
+    for path in (*product_paths, *PRIORITY_PATHS):
         candidate = _normalize(urljoin(root_url, path))
         if _same_origin(root_url, candidate) and candidate not in visited:
             queue.append((candidate, None))
@@ -229,7 +235,7 @@ async def crawl_javascript_exposure(
     root_url = resolved_root
     queue: deque[tuple[str, httpx.Response | None]] = deque([(root_url, initial_response)])
     visited: set[str] = set()
-    _enqueue_priority_paths(root_url, queue, visited)
+    _enqueue_priority_paths(root_url, product, queue, visited)
     successful_files = 0
     findings: list[dict[str, object]] = []
     ai_reviews: list[dict[str, object]] = []

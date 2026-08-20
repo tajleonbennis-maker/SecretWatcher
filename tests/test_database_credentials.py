@@ -29,6 +29,7 @@ def test_credential_suffix_lookup(tmp_path: Path):
     assert public[0]["model_names"] == "deepseek-chat"
     assert "key_hmac" not in public[0]
     assert "source_path" not in public[0]
+    assert db.set_credential_status(asset_id, "a" * 64, "resolved") is True
     scheduled = db.asset_for_scan(10)
     assert scheduled[0]["id"] == asset_id
     db.finish_asset_scan(asset_id, files=3, bytes_scanned=100, findings=1)

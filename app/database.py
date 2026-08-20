@@ -292,6 +292,17 @@ class Database:
             )
             return True
 
+    def set_credential_status(self, asset_id: int, key_hmac: str, status: str) -> bool:
+        allowed = {"unverified", "confirmed", "notified", "resolved", "false_positive"}
+        if status not in allowed:
+            raise ValueError("不支持的凭据状态")
+        with self.connect() as db:
+            cursor = db.execute(
+                "UPDATE credential_findings SET status=?, last_seen=? WHERE asset_id=? AND key_hmac=?",
+                (status, utc_now(), asset_id, key_hmac),
+            )
+            return cursor.rowcount > 0
+
     def lookup_key_suffix4(self, suffix4: str) -> list[dict[str, object]]:
         with self.connect() as db:
             rows = db.execute(

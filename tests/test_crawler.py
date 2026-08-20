@@ -91,3 +91,41 @@ async def test_scans_source_map_sources_content_for_keys():
     assert report["findings"][0]["key_suffix8"] == raw[-8:]
     assert "deepseek-coder" in report["findings"][0]["model_names"]
     assert raw not in repr(report)
+
+
+@pytest.mark.asyncio
+async def test_deeptutor_scans_structured_settings_endpoint():
+    raw = "sk-0123456789abcdef0123456789abcdef"
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url.path)
+        if request.url.path == "/":
+            return httpx.Response(200, text="<title>DeepTutor</title>", headers={"content-type": "text/html"})
+        if request.url.path == "/api/v1/settings":
+            payload = {
+                "catalog": {"services": {"llm": {"profiles": [{
+                    "provider": "deepseek",
+                    "model": "deepseek-chat",
+                    "base_url": "https://api.deepseek.com",
+                    "api_key": raw,
+                }]}}}
+            }
+            return httpx.Response(200, json=payload)
+        return httpx.Response(404, text="missing")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        report = await crawl_javascript_exposure(
+            "https://example.test/",
+            asset_name="example.test",
+            product="DeepTutor",
+            fingerprint_key="test-fingerprint-secret",
+            client=client,
+            allow_private=True,
+        )
+
+    assert "/api/v1/settings" in requested
+    assert len(report["findings"]) == 1
+    assert report["findings"][0]["provider"] == "DeepSeek"
+    assert report["findings"][0]["key_suffix8"] == raw[-8:]
+    assert raw not in repr(report)

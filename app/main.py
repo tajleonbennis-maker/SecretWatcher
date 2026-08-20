@@ -17,6 +17,7 @@ from .config import Settings, get_settings
 from .database import Database
 from .detector import SIGNATURES, detect
 from .fofa import FofaClient, FofaError
+from .product_adapters import public_adapter_summary
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -91,6 +92,7 @@ def public_coverage() -> dict[str, object]:
     return {
         "products": [item.product for item in SIGNATURES],
         "count": len(SIGNATURES),
+        "adapters": public_adapter_summary(),
         "method": "基于 FOFA 已有响应数据进行被动指纹识别",
     }
 
