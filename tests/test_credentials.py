@@ -30,8 +30,18 @@ def test_extracts_deepseek_without_returning_full_key():
 def test_context_free_sk_key_is_kept_as_generic():
     findings = _findings("const value = 'sk-abcdefghijklmnopqrstuvwxyz123456'")
     assert len(findings) == 1
-    assert findings[0]["provider"] == "OpenAI 兼容（sk-）"
+    assert findings[0]["provider"] == "sk- 前缀（厂商未定）"
     assert findings[0]["confidence"] < 0.8
+
+
+def test_model_names_filter_embedding_and_generic():
+    raw = "sk-abcdefghijklmnopqrstuvwxyz123456"
+    findings = _findings(
+        f'DEEPSEEK_API_KEY="{raw}"; model="deepseek-chat"; embedModel="bge-m3"; name="chat"'
+    )
+    assert len(findings) == 1
+    # bge-m3（embedding）和 "chat"（误匹配）都应被过滤，只留 deepseek-chat
+    assert findings[0]["model_names"] == "deepseek-chat"
 
 
 def test_ignores_documentation_placeholder():

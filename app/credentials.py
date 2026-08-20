@@ -84,7 +84,7 @@ def _fmt(
 KEY_FORMATS = (
     # --- 通用 sk- 前缀：OpenAI / DeepSeek / DashScope / Kimi / 硅基流动 / 零一万物 / 百川 ---
     _fmt(
-        "OpenAI 兼容（sk-）",
+        "sk- 前缀（厂商未定）",
         r"(?<![A-Za-z0-9_-])(?P<key>sk-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])",
         min_entropy=3.0,
     ),
@@ -391,25 +391,47 @@ def _resolve_provider(
     return fmt.provider, 0.60
 
 
+# 太笼统/误匹配的模型名（minified JS 里 "chat"、"model" 等常被误当模型）
+_GENERIC_MODEL_NAME = re.compile(r"(?i)^(?:chat|model|default|llm|ai|assistant|completion|base|main)$")
+
+# 非对话模型：embedding / rerank / 语音 / 图像等，混在配置里但不应算作对话模型
+_NON_CHAT_MODEL = re.compile(
+    r"(?i)(?:embed|rerank|re-rank|bge-|whisper|asr|tts|speech|voice|"
+    r"vision|image|stable|diffusion|dall-|flux|audio|ocr|translat)"
+)
+
+
 def _models_near(text: str, start: int, end: int) -> str:
-    local = text[max(0, start - _CONTEXT_WINDOW): min(len(text), end + _CONTEXT_WINDOW)]
+    # 只在 key 附近较小窗口内提取，避免抓到整段配置里的无关模型。
+    window = 500
+    local = text[max(0, start - window): min(len(text), end + window)]
     found: list[str] = []
     seen: set[str] = set()
+
+    def keep(name: str) -> bool:
+        if not name or len(name) < 3:
+            return False
+        if _GENERIC_MODEL_NAME.match(name):
+            return False
+        if _NON_CHAT_MODEL.search(name):
+            return False
+        return True
+
     for match in _MODEL_ASSIGN.finditer(local):
         name = match.group(1).strip()
         key = name.lower()
-        if key in seen or len(name) < 3:
+        if key in seen or not keep(name):
             continue
         seen.add(key)
         found.append(name)
     for match in _KNOWN_MODELS.finditer(local):
         name = match.group(1).strip()
         key = name.lower()
-        if key in seen:
+        if key in seen or not keep(name):
             continue
         seen.add(key)
         found.append(name)
-    return ",".join(found[:8])[:240]
+    return ",".join(found[:2])[:120]
 
 
 def extract_credential_findings(
