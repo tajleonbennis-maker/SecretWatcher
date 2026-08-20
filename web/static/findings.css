@@ -1,0 +1,43 @@
+.findings-privacy {
+  color: #71877d;
+  font-size: 12px;
+  margin: 0;
+}
+
+.findings-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.findings-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.findings-table th,
+.findings-table td {
+  padding: 17px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.findings-table th {
+  color: #71877d;
+  font: 10px ui-monospace, monospace;
+  letter-spacing: .1em;
+}
+
+.findings-table tbody tr:last-child td { border-bottom: 0; }
+.findings-table td { color: #adc0b7; }
+.findings-table td b { color: var(--ink); }
+.findings-table td small { display: block; color: #60786d; margin-top: 3px; }
+.findings-table code { color: var(--green); font: 12px ui-monospace, monospace; }
+.findings-empty { text-align: center !important; color: #71877d !important; padding: 42px !important; }
+.findings-note { color: #60786d; font-size: 11px; margin: 15px 2px 0; }
+.risk { display: inline-block; padding: 3px 8px; border-radius: 12px; background: #162b24; color: #9db1a7; }
+.risk-critical,
+.risk-high { background: rgba(233, 196, 106, .1); color: var(--amber); }

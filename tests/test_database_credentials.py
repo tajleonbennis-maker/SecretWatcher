@@ -12,14 +12,31 @@ def test_credential_suffix_lookup(tmp_path: Path):
         "product": "DeepTutor",
         "asset_name": "example.test",
         "source_path": "/assets/app.js",
+        "model_names": "deepseek-chat",
         "key_suffix8": "1234abcd",
         "key_hmac": "a" * 64,
         "confidence": 0.95,
         "risk_level": "critical",
     })
     assert db.lookup_key_suffix4("abcd")[0]["provider"] == "DeepSeek"
+    assert db.lookup_key_suffix4("abcd")[0]["model_names"] == "deepseek-chat"
     assert db.lookup_key_suffix4("zzzz") == []
+    assert db.public_credential_findings() == []
+    with db.connect() as connection:
+        connection.execute("UPDATE credential_findings SET status='confirmed'")
+    public = db.public_credential_findings()
+    assert public[0]["key_suffix8"] == "1234abcd"
+    assert public[0]["model_names"] == "deepseek-chat"
+    assert "key_hmac" not in public[0]
+    assert "source_path" not in public[0]
     scheduled = db.asset_for_scan(10)
     assert scheduled[0]["id"] == asset_id
     db.finish_asset_scan(asset_id, files=3, bytes_scanned=100, findings=1)
     assert db.asset_for_scan(10)[0]["id"] == asset_id
+    run_id = db.create_scan_run(1)
+    db.mark_asset_scan(asset_id, "running")
+    db.advance_scan_run(run_id, files=3, bytes_scanned=100, findings=1, failed=False)
+    progress = db.admin_scan_progress()
+    assert progress["status"] == "completed"
+    assert progress["completed_assets"] == 1
+    assert progress["recent_assets"][0]["status"] == "running"

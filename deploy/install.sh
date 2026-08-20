@@ -31,8 +31,8 @@ chown -R secretwatcher:secretwatcher /opt/secretwatcher "$data_dir"
 
 install -m 644 "$current_link/deploy/secretwatcher.service" /etc/systemd/system/secretwatcher.service
 systemctl daemon-reload
-systemctl enable --now secretwatcher.service
+systemctl enable secretwatcher.service
+systemctl restart secretwatcher.service
 sleep 2
 curl -fsS http://127.0.0.1:8092/health
 systemctl is-active secretwatcher.service
-

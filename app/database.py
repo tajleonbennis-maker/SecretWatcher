@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS credential_findings (
     provider TEXT NOT NULL,
     product TEXT NOT NULL DEFAULT '',
     asset_name TEXT NOT NULL,
-    source_path TEXT NOT NULL,
+    source_path TEXT NOT NULL DEFAULT '',
+    model_names TEXT NOT NULL DEFAULT '',
     key_suffix8 TEXT NOT NULL,
     key_hmac TEXT NOT NULL,
     confidence REAL NOT NULL,
@@ -83,6 +84,33 @@ CREATE TABLE IF NOT EXISTS asset_scans (
     scanned_at TEXT NOT NULL,
     FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    total_assets INTEGER NOT NULL,
+    completed_assets INTEGER NOT NULL DEFAULT 0,
+    successful_assets INTEGER NOT NULL DEFAULT 0,
+    failed_assets INTEGER NOT NULL DEFAULT 0,
+    files_scanned INTEGER NOT NULL DEFAULT 0,
+    bytes_scanned INTEGER NOT NULL DEFAULT 0,
+    findings INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scan_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    asset_id INTEGER,
+    event_type TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(run_id) REFERENCES scan_runs(id) ON DELETE CASCADE,
+    FOREIGN KEY(asset_id) REFERENCES assets(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_events_run_id ON scan_events(run_id, id);
 """
 
 
@@ -98,6 +126,15 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
             db.executescript(SCHEMA)
+            self._migrate_schema(db)
+
+    @staticmethod
+    def _migrate_schema(db: sqlite3.Connection) -> None:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(credential_findings)")}
+        if columns and "model_names" not in columns:
+            db.execute(
+                "ALTER TABLE credential_findings ADD COLUMN model_names TEXT NOT NULL DEFAULT ''"
+            )
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -231,9 +268,11 @@ class Database:
             if existing:
                 db.execute(
                     """UPDATE credential_findings SET product=?, asset_name=?, source_path=?,
+                    model_names=CASE WHEN length(?)>length(model_names) THEN ? ELSE model_names END,
                     key_suffix8=?, confidence=MAX(confidence, ?), risk_level=?, last_seen=? WHERE id=?""",
                     (
-                        finding.get("product", ""), finding["asset_name"], finding["source_path"],
+                        finding.get("product", ""), finding["asset_name"], finding.get("source_path", ""),
+                        finding.get("model_names", ""), finding.get("model_names", ""),
                         finding["key_suffix8"], finding["confidence"], finding["risk_level"], now,
                         existing["id"],
                     ),
@@ -241,12 +280,13 @@ class Database:
                 return False
             db.execute(
                 """INSERT INTO credential_findings
-                (asset_id, provider, product, asset_name, source_path, key_suffix8, key_hmac,
+                (asset_id, provider, product, asset_name, source_path, model_names, key_suffix8, key_hmac,
                  confidence, risk_level, first_seen, last_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     asset_id, finding["provider"], finding.get("product", ""), finding["asset_name"],
-                    finding["source_path"], finding["key_suffix8"], finding["key_hmac"],
+                    finding.get("source_path", ""), finding.get("model_names", ""),
+                    finding["key_suffix8"], finding["key_hmac"],
                     finding["confidence"], finding["risk_level"], now, now,
                 ),
             )
@@ -255,17 +295,31 @@ class Database:
     def lookup_key_suffix4(self, suffix4: str) -> list[dict[str, object]]:
         with self.connect() as db:
             rows = db.execute(
-                """SELECT provider, product, asset_name, key_suffix8, first_seen, last_seen, status
+                """SELECT provider, product, asset_name, model_names, key_suffix8,
+                first_seen, last_seen, status
                 FROM credential_findings WHERE substr(key_suffix8, -4)=?
                 ORDER BY last_seen DESC LIMIT 50""",
                 (suffix4,),
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def public_credential_findings(self, limit: int = 20) -> list[dict[str, object]]:
+        """Return only public-safe fields: asset hint, model info, key suffix."""
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT provider, product, asset_name, model_names, key_suffix8, risk_level,
+                first_seen, last_seen, status
+                FROM credential_findings
+                WHERE status IN ('confirmed', 'notified', 'resolved')
+                ORDER BY last_seen DESC, id DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def asset_for_scan(self, limit: int = 100) -> list[dict[str, object]]:
         with self.connect() as db:
             rows = db.execute(
-                """SELECT a.id, a.host, a.link, a.domain, a.title,
+                """SELECT a.id, a.host, a.ip, a.port, a.protocol, a.link, a.domain, a.title,
                 COALESCE((SELECT product FROM detections d WHERE d.asset_id=a.id
                           ORDER BY confidence DESC LIMIT 1), '') AS product
                 FROM assets a
@@ -295,3 +349,125 @@ class Database:
                     "failed" if error else "completed", error[:300], utc_now(),
                 ),
             )
+
+    def create_scan_run(self, total_assets: int) -> int:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute(
+                "UPDATE scan_runs SET status='interrupted', completed_at=?, updated_at=? WHERE status='running'",
+                (now, now),
+            )
+            cursor = db.execute(
+                """INSERT INTO scan_runs (total_assets, status, started_at, updated_at)
+                VALUES (?, 'running', ?, ?)""",
+                (total_assets, now, now),
+            )
+            run_id = int(cursor.lastrowid)
+            db.execute(
+                "INSERT INTO scan_events (run_id, event_type, created_at) VALUES (?, 'run_started', ?)",
+                (run_id, now),
+            )
+            return run_id
+
+    def mark_asset_scan(self, asset_id: int, status: str, run_id: int | None = None) -> None:
+        with self.connect() as db:
+            db.execute(
+                """INSERT INTO asset_scans
+                (asset_id, status, scanned_at) VALUES (?, ?, ?)
+                ON CONFLICT(asset_id) DO UPDATE SET status=excluded.status,
+                  error='', scanned_at=excluded.scanned_at""",
+                (asset_id, status, utc_now()),
+            )
+            if status == "queued":
+                db.execute(
+                    """UPDATE asset_scans SET files_scanned=0, bytes_scanned=0,
+                    findings=0, error='' WHERE asset_id=?""",
+                    (asset_id,),
+                )
+            if run_id is not None:
+                db.execute(
+                    "INSERT INTO scan_events (run_id, asset_id, event_type, created_at) VALUES (?, ?, ?, ?)",
+                    (run_id, asset_id, f"asset_{status}", utc_now()),
+                )
+
+    def record_file_progress(self, run_id: int, asset_id: int, byte_count: int) -> None:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute(
+                """UPDATE asset_scans SET files_scanned=files_scanned+1,
+                bytes_scanned=bytes_scanned+?, scanned_at=? WHERE asset_id=?""",
+                (byte_count, now, asset_id),
+            )
+            db.execute(
+                """UPDATE scan_runs SET files_scanned=files_scanned+1,
+                bytes_scanned=bytes_scanned+?, updated_at=? WHERE id=?""",
+                (byte_count, now, run_id),
+            )
+            count = db.execute(
+                "SELECT files_scanned FROM asset_scans WHERE asset_id=?", (asset_id,)
+            ).fetchone()[0]
+            if count == 1 or count % 5 == 0:
+                db.execute(
+                    "INSERT INTO scan_events (run_id, asset_id, event_type, created_at) VALUES (?, ?, 'file_progress', ?)",
+                    (run_id, asset_id, now),
+                )
+
+    def advance_scan_run(
+        self, run_id: int, *, files: int, bytes_scanned: int, findings: int, failed: bool
+    ) -> None:
+        now = utc_now()
+        with self.connect() as db:
+            db.execute(
+                """UPDATE scan_runs SET
+                  completed_assets=completed_assets+1,
+                  successful_assets=successful_assets+?,
+                  failed_assets=failed_assets+?,
+                  files_scanned=files_scanned+?,
+                  bytes_scanned=bytes_scanned+?,
+                  findings=findings+?,
+                  status=CASE WHEN completed_assets+1 >= total_assets THEN 'completed' ELSE 'running' END,
+                  completed_at=CASE WHEN completed_assets+1 >= total_assets THEN ? ELSE NULL END,
+                  updated_at=?
+                WHERE id=?""",
+                (0 if failed else 1, 1 if failed else 0, files, bytes_scanned, findings, now, now, run_id),
+            )
+            db.execute(
+                "INSERT INTO scan_events (run_id, event_type, created_at) VALUES (?, ?, ?)",
+                (run_id, "asset_failed" if failed else "asset_completed", now),
+            )
+            run = db.execute(
+                "SELECT status FROM scan_runs WHERE id=?", (run_id,)
+            ).fetchone()
+            if run and run["status"] == "completed":
+                db.execute(
+                    "INSERT INTO scan_events (run_id, event_type, created_at) VALUES (?, 'run_completed', ?)",
+                    (run_id, now),
+                )
+
+    def admin_scan_progress(self) -> dict[str, object]:
+        with self.connect() as db:
+            run = db.execute("SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
+            recent = db.execute(
+                """SELECT COALESCE(NULLIF(a.domain,''), NULLIF(a.title,''), a.host) AS asset_name,
+                s.status, s.files_scanned, s.bytes_scanned, s.findings, s.error, s.scanned_at,
+                COALESCE((SELECT product FROM detections d WHERE d.asset_id=a.id
+                          ORDER BY confidence DESC LIMIT 1), '') AS product
+                FROM asset_scans s JOIN assets a ON a.id=s.asset_id
+                ORDER BY s.scanned_at DESC LIMIT 30"""
+            ).fetchall()
+        payload = dict(run) if run else {
+            "total_assets": 0, "completed_assets": 0, "successful_assets": 0,
+            "failed_assets": 0, "files_scanned": 0, "bytes_scanned": 0,
+            "findings": 0, "status": "idle",
+        }
+        payload["recent_assets"] = [dict(row) for row in recent]
+        return payload
+
+    def scan_events_after(self, event_id: int, limit: int = 100) -> list[dict[str, object]]:
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT id, run_id, asset_id, event_type, created_at FROM scan_events
+                WHERE id>? ORDER BY id LIMIT ?""",
+                (event_id, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
