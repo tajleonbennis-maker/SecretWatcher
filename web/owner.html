@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Owner 控制台 · 秘钥守望者</title>
   <style>
-    :root{color-scheme:dark;font-family:Inter,"PingFang SC",system-ui,sans-serif;background:#07100e;color:#edf5ef}body{margin:0}.shell{max-width:1100px;margin:auto;padding:40px 24px}header{display:flex;justify-content:space-between;align-items:center}a{color:#71eeaa}.login,.panel{background:#0b1714;border:1px solid #1b342c;border-radius:10px;padding:22px;margin-top:24px}input,button{border-radius:6px;padding:11px 13px;border:1px solid #315d4d;background:#07100e;color:#edf5ef}input{width:min(480px,70%)}button{background:#71eeaa;color:#062017;font-weight:700}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{background:#0e1d19;padding:18px;border-radius:7px}.metric b{display:block;color:#71eeaa;font-size:28px}.bar{height:10px;background:#183129;border-radius:9px;overflow:hidden;margin:22px 0}.bar i{display:block;height:100%;background:#71eeaa;width:0}.muted{color:#8fa69c}.error{color:#e9c46a}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;border-bottom:1px solid #1b342c;padding:10px 8px}#dashboard{display:none}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}table{display:block;overflow:auto}}
+    :root{color-scheme:dark;font-family:Inter,"PingFang SC",system-ui,sans-serif;background:#07100e;color:#edf5ef}body{margin:0}.shell{max-width:1100px;margin:auto;padding:40px 24px}header{display:flex;justify-content:space-between;align-items:center}a{color:#71eeaa}.login,.panel{background:#0b1714;border:1px solid #1b342c;border-radius:10px;padding:22px;margin-top:24px}input,button{border-radius:6px;padding:11px 13px;border:1px solid #315d4d;background:#07100e;color:#edf5ef}input{width:min(480px,70%)}button{background:#71eeaa;color:#062017;font-weight:700}button.del{background:#2a1a1a;color:#e9c46a;border-color:#5d3a3a}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{background:#0e1d19;padding:18px;border-radius:7px}.metric b{display:block;color:#71eeaa;font-size:28px}.bar{height:10px;background:#183129;border-radius:9px;overflow:hidden;margin:22px 0}.bar i{display:block;height:100%;background:#71eeaa;width:0}.muted{color:#8fa69c}.error{color:#e9c46a}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;border-bottom:1px solid #1b342c;padding:10px 8px}#dashboard{display:none}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}table{display:block;overflow:auto}}
   </style>
 </head>
 <body><main class="shell">
@@ -19,6 +19,7 @@
       <div class="metric"><b id="findings">0</b><span>脱敏凭据发现</span></div>
     </div><div class="bar"><i id="progressBar"></i></div><p id="status" class="muted"></p></div>
     <div class="panel"><h2>最近资产进度</h2><table><thead><tr><th>资产</th><th>产品</th><th>状态</th><th>文件</th><th>字节</th><th>发现</th><th>时间</th></tr></thead><tbody id="recent"></tbody></table></div>
+    <div class="panel"><h2>脱敏凭据发现（全部）</h2><table><thead><tr><th>厂商</th><th>应用 / 资产</th><th>模型</th><th>脱敏 Key</th><th>置信度</th><th>状态</th><th>最近发现</th><th>操作</th></tr></thead><tbody id="findingsList"><tr><td colspan="8" class="muted">加载中…</td></tr></tbody></table></div>
   </section>
   <script src="/static/owner.js"></script>
 </main></body></html>

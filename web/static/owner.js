@@ -48,8 +48,45 @@ async function streamProgress() {
 
 async function connect() {
   token = $("token").value.trim() || token;
-  try { const first = await refresh(); sessionStorage.setItem("secretwatcher-admin-token", token); $("login").style.display="none"; $("dashboard").style.display="block"; streamProgress().catch(()=>setInterval(() => refresh().catch(()=>{}), 3000)); }
+  try { const first = await refresh(); sessionStorage.setItem("secretwatcher-admin-token", token); $("login").style.display="none"; $("dashboard").style.display="block"; loadFindings().catch(()=>{}); streamProgress().catch(()=>setInterval(() => refresh().catch(()=>{}), 3000)); }
   catch (error) { $("loginError").textContent = error.message; }
+}
+
+function statusLabel(value) {
+  return ({ unverified: "待复核", confirmed: "已确认", notified: "已通知", resolved: "已处置" })[value] || value;
+}
+
+function findingRow(item) {
+  return `<tr>
+    <td><b>${escapeHtml(item.provider)}</b></td>
+    <td>${escapeHtml(item.product)}<small>${escapeHtml(item.asset)}</small></td>
+    <td><code>${escapeHtml(item.models || "未识别模型")}</code></td>
+    <td><code>${escapeHtml(item.key_hint)}</code></td>
+    <td>${Number(item.confidence || 0).toFixed(2)}</td>
+    <td>${escapeHtml(statusLabel(item.status))}</td>
+    <td>${escapeHtml(item.last_seen)}</td>
+    <td><button class="del" data-id="${Number(item.id)}">删除</button></td>
+  </tr>`;
+}
+
+async function loadFindings() {
+  const response = await fetch("/api/public/findings", { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error(`加载失败：${response.status}`);
+  const data = await response.json();
+  const list = data.findings || [];
+  const body = document.querySelector("#findingsList");
+  if (!list.length) { body.innerHTML = `<tr><td colspan="8" class="muted">暂无发现记录</td></tr>`; return; }
+  body.innerHTML = list.map(findingRow).join("");
+  body.querySelectorAll("button.del").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`确认删除发现记录 #${btn.dataset.id}？`)) return;
+      const resp = await fetch(`/api/admin/findings/${btn.dataset.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.ok) { loadFindings().catch(()=>{}); } else { alert(`删除失败：${resp.status}`); }
+    });
+  });
 }
 
 $("connect").addEventListener("click", connect);

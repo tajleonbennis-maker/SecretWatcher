@@ -119,11 +119,13 @@ def _public_finding(item: dict[str, object], *, key_visible_chars: int = 4) -> d
     """Public surface: masked asset, model info, and key suffix only."""
     models = str(item.get("model_names") or "").strip()
     return {
+        "id": item.get("id"),
         "provider": item["provider"],
         "product": item.get("product") or "未识别应用",
         "asset": _mask_asset(str(item["asset_name"])),
         "models": models or "未识别模型",
         "key_hint": "****" + str(item["key_suffix8"])[-key_visible_chars:],
+        "confidence": round(float(item.get("confidence") or 0), 2),
         "risk_level": item.get("risk_level", "unknown"),
         "first_seen": item["first_seen"],
         "last_seen": item["last_seen"],
@@ -149,6 +151,14 @@ def key_lookup(request: KeyLookupRequest, db: Database = Depends(database)) -> d
         "count": len(matches),
         "notice": "末四位只能用于初步查询；命中后仅展示后八位，查看处置信息前仍需验证资产所有权。",
     }
+
+
+@app.delete("/api/admin/findings/{finding_id}", dependencies=[Depends(require_admin)])
+def delete_finding(finding_id: int, db: Database = Depends(database)) -> dict[str, object]:
+    removed = db.delete_credential_finding(finding_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="未找到该发现记录")
+    return {"deleted": finding_id}
 
 
 @app.get("/api/admin/scan/progress", dependencies=[Depends(require_admin)])

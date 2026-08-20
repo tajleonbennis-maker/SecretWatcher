@@ -21,12 +21,12 @@ def test_credential_suffix_lookup(tmp_path: Path):
     assert db.lookup_key_suffix4("abcd")[0]["provider"] == "DeepSeek"
     assert db.lookup_key_suffix4("abcd")[0]["model_names"] == "deepseek-chat"
     assert db.lookup_key_suffix4("zzzz") == []
-    assert db.public_credential_findings() == []
-    with db.connect() as connection:
-        connection.execute("UPDATE credential_findings SET status='confirmed'")
+    # 公开列表不再按 status 过滤，unverified 也直接返回。
     public = db.public_credential_findings()
+    assert len(public) == 1
     assert public[0]["key_suffix8"] == "1234abcd"
     assert public[0]["model_names"] == "deepseek-chat"
+    assert public[0]["status"] == "unverified"
     assert "key_hmac" not in public[0]
     assert "source_path" not in public[0]
     assert db.set_credential_status(asset_id, "a" * 64, "resolved") is True
@@ -41,3 +41,6 @@ def test_credential_suffix_lookup(tmp_path: Path):
     assert progress["status"] == "completed"
     assert progress["completed_assets"] == 1
     assert progress["recent_assets"][0]["status"] == "running"
+    finding_id = public[0]["id"]
+    assert db.delete_credential_finding(finding_id) is True
+    assert db.delete_credential_finding(finding_id) is False

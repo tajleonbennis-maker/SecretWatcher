@@ -314,18 +314,22 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def public_credential_findings(self, limit: int = 20) -> list[dict[str, object]]:
-        """Return only public-safe fields: asset hint, model info, key suffix."""
+    def public_credential_findings(self, limit: int = 200) -> list[dict[str, object]]:
+        """Return public-safe fields for all findings (id kept for admin deletion)."""
         with self.connect() as db:
             rows = db.execute(
-                """SELECT provider, product, asset_name, model_names, key_suffix8, risk_level,
+                """SELECT id, provider, product, asset_name, model_names, key_suffix8, confidence, risk_level,
                 first_seen, last_seen, status
                 FROM credential_findings
-                WHERE status IN ('confirmed', 'notified', 'resolved')
                 ORDER BY last_seen DESC, id DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def delete_credential_finding(self, finding_id: int) -> bool:
+        with self.connect() as db:
+            cursor = db.execute("DELETE FROM credential_findings WHERE id=?", (finding_id,))
+            return cursor.rowcount > 0
 
     def asset_for_scan(self, limit: int = 100) -> list[dict[str, object]]:
         with self.connect() as db:
