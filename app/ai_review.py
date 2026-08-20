@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from .credentials import KEY_PATTERNS
+from .credentials import REDACTION_PATTERNS
 
 
 SENSITIVE_ASSIGNMENT = re.compile(
@@ -17,7 +17,7 @@ SENSITIVE_ASSIGNMENT = re.compile(
 
 def redact_for_ai(text: str, max_chars: int = 24_000) -> str:
     redacted = text[:max_chars]
-    for pattern in KEY_PATTERNS:
+    for pattern in REDACTION_PATTERNS:
         redacted = pattern.sub("[REDACTED_CREDENTIAL]", redacted)
     redacted = SENSITIVE_ASSIGNMENT.sub(
         lambda match: f"{match.group(1)}{match.group(2)}[REDACTED_CREDENTIAL]",

@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+
+# ---------------------------------------------------------------------------
+# 提供商上下文规则
+#
+# 这些规则用于「归属加分」，不再是「硬门槛」。候选密钥即使没有上下文，
+# 只要格式本身足够特异，仍然会被记录（置信度略低），进入人工复核队列。
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -21,7 +30,7 @@ def _rx(*values: str) -> tuple[re.Pattern[str], ...]:
 PROVIDERS = (
     ProviderRule("DeepSeek", _rx(r"deepseek", r"api\.deepseek\.com", r"DEEPSEEK_API_KEY")),
     ProviderRule("阿里云百炼 / 通义千问", _rx(r"dashscope", r"aliyuncs\.com/compatible-mode", r"DASHSCOPE_API_KEY", r"\bqwen[-_]")),
-    ProviderRule("火山引擎方舟 / 豆包", _rx(r"volces\.com/api/v3", r"ARK_API_KEY", r"doubao", r"volcengine")),
+    ProviderRule("火山引擎方舟 / 豆包", _rx(r"volces\.com/api/v3", r"ARK_API_KEY", r"doubao", r"volcengine", r"\bark\b")),
     ProviderRule("智谱 GLM", _rx(r"open\.bigmodel\.cn", r"ZHIPUAI_API_KEY", r"\bglm[-_]")),
     ProviderRule("月之暗面 Kimi", _rx(r"api\.moonshot\.cn", r"MOONSHOT_API_KEY", r"moonshot-v1", r"\bkimi\b")),
     ProviderRule("百度千帆 / 文心", _rx(r"qianfan", r"aip\.baidubce\.com", r"QIANFAN_(?:AK|SK)", r"ERNIE")),
@@ -33,13 +42,121 @@ PROVIDERS = (
     ProviderRule("OpenAI 兼容", _rx(r"api\.openai\.com", r"OPENAI_API_KEY", r"openai\.azure\.com")),
 )
 
-# Deliberately conservative: short examples such as sk-xxx never match.
-KEY_PATTERNS = (
-    re.compile(r"(?<![A-Za-z0-9_-])(sk-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"),
-    re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9]{8,}\.[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"),
+
+# ---------------------------------------------------------------------------
+# 密钥格式库
+#
+# 每个提供商/通用凭据至少一条「精确格式」正则。捕获组 `key` 为完整密钥。
+#   - `fixed`          格式本身即可确定提供商（如 AKID、ghp_、AIza、AKIA），
+#                      上下文只用于提升置信度，不改变归属。
+#   - `requires_context` 格式太常见（如 UUID），必须有上下文才记录，否则误报爆炸。
+#   - `min_entropy`    对格式做熵下限约束，排除 aaaa、1234 这类低熵假密钥。
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class KeyFormat:
+    provider: str
+    pattern: re.Pattern[str]
+    fixed: bool = False
+    requires_context: bool = False
+    min_entropy: float | None = None
+
+
+def _fmt(
+    provider: str,
+    regex: str,
+    *,
+    fixed: bool = False,
+    requires_context: bool = False,
+    min_entropy: float | None = None,
+    flags: int = re.I,
+) -> KeyFormat:
+    return KeyFormat(
+        provider=provider,
+        pattern=re.compile(regex, flags),
+        fixed=fixed,
+        requires_context=requires_context,
+        min_entropy=min_entropy,
+    )
+
+
+KEY_FORMATS = (
+    # --- 通用 sk- 前缀：OpenAI / DeepSeek / DashScope / Kimi / 硅基流动 / 零一万物 / 百川 ---
+    _fmt(
+        "OpenAI 兼容（sk-）",
+        r"(?<![A-Za-z0-9_-])(?P<key>sk-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])",
+        min_entropy=3.0,
+    ),
+    # --- 智谱 GLM 的 id.secret 形式 ---
+    _fmt(
+        "智谱 GLM 兼容（id.secret）",
+        r"(?<![A-Za-z0-9_.-])(?P<key>[A-Za-z0-9]{8,}\.[A-Za-z0-9]{28,})(?![A-Za-z0-9_.-])",
+        min_entropy=3.0,
+    ),
+    # --- 火山引擎方舟：UUID 形式，太常见，必须上下文 ---
+    _fmt(
+        "火山引擎方舟 / 豆包",
+        r"(?<![0-9A-Fa-f-])(?P<key>[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})(?![0-9A-Fa-f-])",
+        requires_context=True,
+    ),
+    # --- JWT：MiniMax 与各类 Bearer 令牌 ---
+    _fmt(
+        "JWT 令牌（MiniMax/通用）",
+        r"(?<![A-Za-z0-9_-])(?P<key>eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])",
+    ),
+    # --- 腾讯云 SecretId（AKID 前缀足够特异，可直接确定） ---
+    _fmt(
+        "腾讯云",
+        r"(?<![A-Za-z0-9])(?P<key>AKID[A-Za-z0-9]{20,})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
+    # --- GitHub 令牌 ---
+    _fmt(
+        "GitHub",
+        r"(?<![A-Za-z0-9])(?P<key>gh[pous]_[A-Za-z0-9]{36})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
+    _fmt(
+        "GitHub",
+        r"(?<![A-Za-z0-9])(?P<key>github_pat_[A-Za-z0-9_]{20,})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
+    # --- Google API Key ---
+    _fmt(
+        "Google",
+        r"(?<![A-Za-z0-9])(?P<key>AIza[0-9A-Za-z_-]{35})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
+    # --- AWS Access Key ---
+    _fmt(
+        "AWS",
+        r"(?<![A-Za-z0-9])(?P<key>(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
+    # --- Slack 令牌 ---
+    _fmt(
+        "Slack",
+        r"(?<![A-Za-z0-9])(?P<key>xox[baprs]-[A-Za-z0-9-]{10,})(?![A-Za-z0-9])",
+        fixed=True,
+    ),
 )
 
-# Common fake / docs strings that still satisfy length rules (expanded).
+# 熵兜底候选：无法匹配已知格式、但随机性高的字符串。
+# 只在与「敏感赋值」相邻时报警，避免把普通 hash、cache key 当密钥。
+BASE64_CANDIDATE = re.compile(r"(?<![A-Za-z0-9+/=])(?P<key>[A-Za-z0-9+/]{24,}={0,2})(?![A-Za-z0-9+/=])")
+HEX_CANDIDATE = re.compile(r"(?<![0-9A-Fa-f])(?P<key>[0-9A-Fa-f]{32,})(?![0-9A-Fa-f])")
+
+SENSITIVE_CONTEXT = re.compile(
+    r"(?i)(?:api[_-]?key|apikey|secret[_-]?key|access[_-]?key|auth[_-]?token|"
+    r"bearer|password|passwd|credential|private[_-]?key|client[_-]?secret|"
+    r"authorization|token)"
+)
+
+# 用于 AI 复核前的脱敏：覆盖全部格式 + 熵兜底候选。
+REDACTION_PATTERNS = tuple(fmt.pattern for fmt in KEY_FORMATS) + (BASE64_CANDIDATE, HEX_CANDIDATE)
+
+# 常见占位符 / 文档示例字符串，即使长度满足也要排除。
 _PLACEHOLDER_FRAGMENTS = (
     "xxx", "your-", "your_", "example", "changeme", "placeholder",
     "insert", "replace", "todo", "sample", "dummy", "fake", "testkey",
@@ -127,6 +244,14 @@ _CONTEXT_WINDOW = 1600
 
 # Window size for context validation (chars before and after the match).
 _VALIDATION_WINDOW = 200
+
+
+def _shannon_entropy(s: str) -> float:
+    if not s:
+        return 0.0
+    counts = Counter(s)
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in counts.values())
 
 
 def _is_placeholder_key(raw_key: str) -> bool:
@@ -230,18 +355,40 @@ def _get_confidence_from_path(source_url: str) -> float:
     return 0.78
 
 
-def _provider_for(text: str, start: int, end: int) -> tuple[str, float] | None:
+def _context_scores(text: str, start: int, end: int) -> dict[str, int]:
     local = text[max(0, start - _CONTEXT_WINDOW): min(len(text), end + _CONTEXT_WINDOW)]
-    scored: list[tuple[int, str]] = []
+    scores: dict[str, int] = {}
     for rule in PROVIDERS:
         score = sum(1 for pattern in rule.context if pattern.search(local))
         if score:
-            scored.append((score, rule.name))
-    if not scored:
-        return None
-    scored.sort(reverse=True)
-    best_score, provider = scored[0]
-    return provider, min(0.99, 0.78 + best_score * 0.07)
+            scores[rule.name] = score
+    return scores
+
+
+def _sensitive_context_near(text: str, start: int, end: int) -> bool:
+    local = text[max(0, start - _CONTEXT_WINDOW): min(len(text), end + _CONTEXT_WINDOW)]
+    return bool(SENSITIVE_CONTEXT.search(local))
+
+
+def _resolve_provider(
+    fmt: KeyFormat, text: str, start: int, end: int
+) -> tuple[str, float] | None:
+    scores = _context_scores(text, start, end)
+    best = max(scores, key=scores.get) if scores else None
+
+    if fmt.requires_context and best is None:
+        return None  # UUID 等常见格式，无上下文直接丢弃
+
+    if fmt.fixed:
+        # 格式本身确定提供商，上下文只提置信度。
+        confidence = 0.80 + (0.02 * scores.get(best, 0) if best else 0.0)
+        return fmt.provider, min(0.99, confidence)
+
+    if best is not None:
+        return best, min(0.99, 0.82 + 0.05 * scores[best])
+
+    # 无上下文：保留格式默认归属，但降置信度。
+    return fmt.provider, 0.60
 
 
 def _models_near(text: str, start: int, end: int) -> str:
@@ -273,75 +420,82 @@ def extract_credential_findings(
     product: str,
     fingerprint_key: str,
 ) -> list[dict[str, object]]:
-    """Find likely AI API keys; persist only asset + model + suffix8 (+ hmac for dedupe).
+    """Find likely API keys; persist only asset + model + suffix8 (+ hmac for dedupe).
 
-    Improved version with four-layer filtering:
-    1. File type awareness (path-based confidence adjustment)
-    2. Context validation (must be near legitimate assignment)
-    3. Enhanced placeholder detection (entropy, repetition, expanded blacklist)
-    4. Cross-file deduplication (via HMAC, unchanged)
+    与旧版不同：无提供商上下文的强格式密钥不再被丢弃，而是降级为通用归属，
+    以人工复核兜底，从而显著降低漏报。
     """
     if not fingerprint_key:
         raise ValueError("SECRETWATCHER_FINGERPRINT_KEY 未配置")
-    
+
     results: list[dict[str, object]] = []
     seen: set[str] = set()
-    
-    # Get base confidence from file path
-    path_confidence = _get_confidence_from_path(source_url)
     path = urlsplit(source_url).path or "/"
-    
-    # Determine if we need strict context validation (for low-confidence paths)
+    path_confidence = _get_confidence_from_path(source_url)
     require_strict_context = _LOW_CONFIDENCE_PATHS.search(path) is not None
-    
-    for pattern in KEY_PATTERNS:
-        for match in pattern.finditer(text):
-            raw_key = match.group(1)
-            
-            # Layer 3: Enhanced placeholder detection
-            if _is_placeholder_key(raw_key):
+    covered: list[tuple[int, int]] = []
+
+    def emit(raw_key: str, provider: str, confidence: float, start: int, end: int) -> None:
+        raw_key = raw_key.strip()
+        if not raw_key or _is_placeholder_key(raw_key):
+            return
+        if _is_in_exclusion_context(text, start, end):
+            return
+        if require_strict_context and not _has_valid_assignment_context(text, start, end):
+            return
+        confidence = min(confidence, path_confidence)
+        if confidence < 0.5:
+            return
+        digest = hmac.new(fingerprint_key.encode(), raw_key.encode(), hashlib.sha256).hexdigest()
+        if digest in seen:
+            return
+        seen.add(digest)
+        results.append(
+            {
+                "provider": provider,
+                "product": product,
+                "asset_name": asset_name[:255],
+                "source_path": path[:1000],
+                "model_names": _models_near(text, start, end),
+                "key_suffix8": raw_key[-8:],
+                "key_hmac": digest,
+                "confidence": round(confidence, 2),
+                "risk_level": "critical" if confidence >= 0.75 else "medium",
+            }
+        )
+
+    # 1. 精确格式库。
+    for fmt in KEY_FORMATS:
+        for match in fmt.pattern.finditer(text):
+            raw_key = match.group("key")
+            if fmt.min_entropy is not None and _shannon_entropy(raw_key) < fmt.min_entropy:
                 continue
-            
-            # Layer 2: Context validation (stricter for frontend files)
-            if _is_in_exclusion_context(text, match.start(), match.end()):
+            resolved = _resolve_provider(fmt, text, match.start(), match.end())
+            if resolved is None:
                 continue
-            
-            if require_strict_context:
-                if not _has_valid_assignment_context(text, match.start(), match.end()):
-                    continue
-            
-            attribution = _provider_for(text, match.start(), match.end())
-            if not attribution:
+            provider, confidence = resolved
+            covered.append((match.start(), match.end()))
+            emit(raw_key, provider, confidence, match.start(), match.end())
+
+    # 2. 熵兜底：只在敏感赋值语境中，对高熵 base64 / hex 串报警，
+    #    并跳过格式库已覆盖的区间，避免同一密钥的子串被重复报告。
+    def _overlaps(start: int, end: int) -> bool:
+        return any(start < b and a < end for a, b in covered)
+
+    for candidate, threshold, confidence in (
+        (BASE64_CANDIDATE, 4.5, 0.45),
+        (HEX_CANDIDATE, 3.2, 0.42),
+    ):
+        for match in candidate.finditer(text):
+            if _overlaps(match.start(), match.end()):
                 continue
-            
-            provider, confidence = attribution
-            
-            # Adjust confidence based on path and context
-            final_confidence = min(confidence, path_confidence)
-            
-            # If confidence is too low, skip (likely false positive)
-            if final_confidence < 0.5:
+            raw_key = match.group("key").rstrip("=")
+            if _shannon_entropy(raw_key) < threshold:
                 continue
-            
-            digest = hmac.new(fingerprint_key.encode(), raw_key.encode(), hashlib.sha256).hexdigest()
-            if digest in seen:
+            if not _sensitive_context_near(text, match.start(), match.end()):
                 continue
-            seen.add(digest)
-            
-            results.append(
-                {
-                    "provider": provider,
-                    "product": product,
-                    "asset_name": asset_name[:255],
-                    "source_path": path[:1000],
-                    "model_names": _models_near(text, match.start(), match.end()),
-                    "key_suffix8": raw_key[-8:],
-                    "key_hmac": digest,
-                    "confidence": round(final_confidence, 2),
-                    "risk_level": "critical" if final_confidence >= 0.75 else "medium",
-                }
-            )
-            # raw_key intentionally leaves scope; never returned or logged.
+            emit(raw_key, "未识别（高熵凭据）", confidence, match.start(), match.end())
+
     return results
 
 
